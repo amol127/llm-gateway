@@ -6,6 +6,9 @@ from app.reliability import AllProvidersFailed, Router
 from app.auth import authenticate
 import httpx
 
+from app.ratelimit import rate_limit
+
+
 app = FastAPI(title="LLM Gateway")
 provider = MockProvider()
 
@@ -25,7 +28,7 @@ async def health():
 
 
 @app.post("/v1/chat")
-async def chat(req: ChatRequest,  tenant_id: int = Depends(authenticate)):
+async def chat(req: ChatRequest,  tenant_id: int = Depends(rate_limit)):
     try:
         provider_name, result = await router.chat(req.model, req.messages)
     except AllProvidersFailed as e:

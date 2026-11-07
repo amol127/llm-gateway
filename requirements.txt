@@ -5,3 +5,4 @@ pydantic
 pydantic-settings
 sqlalchemy[asyncio]
 asyncpg
+redis

@@ -4,6 +4,7 @@ from app.auth import authenticate
 from app.main import app
 from app.providers.mock import MockProvider
 from app.reliability import Router
+from app.ratelimit import rate_limit
 
 # def test_chat(monkeypatch):
 #     monkeypatch.setattr(main, "router", Router([MockProvider(latency=0)]))
@@ -17,7 +18,7 @@ from app.reliability import Router
 
 def test_chat(monkeypatch):
     monkeypatch.setattr(main, "router", Router([MockProvider(latency=0)]))
-    app.dependency_overrides[authenticate] = lambda: 1
+    app.dependency_overrides[rate_limit] = lambda: 1
     client = TestClient(app)
     r = client.post("/v1/chat", json={"model": "x", "messages": [{"role": "user", "content": "hey"}]})
     app.dependency_overrides.clear()
