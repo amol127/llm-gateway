@@ -103,11 +103,8 @@ async def chat(
         )
         raise HTTPException(status_code=502, detail={"provider_status": e.response.status_code})
 
-        # Written after the response is sent, so logging adds no user-facing latency.
+    # Written after the response is sent, so logging adds no user-facing latency.
     background.add_task(
-        set_cached, key,
-        result, 
-        settings.cache_ttl_seconds,
         record_request,
         tenant_id=tenant_id,
         provider=provider_name,
@@ -118,6 +115,7 @@ async def chat(
         latency_ms=_ms(start),
         status="ok",
     )
+    background.add_task(set_cached, key, result, settings.cache_ttl_seconds)
     return {"provider": provider_name, **result.model_dump()}
 
 
@@ -127,14 +125,14 @@ async def usage(
     session: AsyncSession = Depends(get_session),
 ):
     q = select(
-        # func.count(RequestLog.id),
-        func.count(RequestLog.id).filter(RequestLog.cached.is_(True)),
-        func.coalesce(func.sum(RequestLog.saved_usd), 0),
-        func.coalesce(func.sum(RequestLog.input_tokens), 0),
-        func.coalesce(func.sum(RequestLog.output_tokens), 0),
-        func.coalesce(func.sum(RequestLog.cost_usd), 0),
-        func.coalesce(func.avg(RequestLog.latency_ms), 0),
-        func.count(RequestLog.id).filter(RequestLog.status == "error"),
+        func.count(RequestLog.id),                                           # n
+        func.coalesce(func.sum(RequestLog.input_tokens), 0),                 # tin
+        func.coalesce(func.sum(RequestLog.output_tokens), 0),                # tout
+        func.coalesce(func.sum(RequestLog.cost_usd), 0),                     # cost
+        func.coalesce(func.avg(RequestLog.latency_ms), 0),                   # avg_ms
+        func.count(RequestLog.id).filter(RequestLog.status == "error"),      # errors
+        func.count(RequestLog.id).filter(RequestLog.cached.is_(True)),       # hits
+        func.coalesce(func.sum(RequestLog.saved_usd), 0),                    # saved
     ).where(RequestLog.tenant_id == tenant_id)
     n, tin, tout, cost, avg_ms, errors, hits, saved = (await session.execute(q)).one()
     return {
