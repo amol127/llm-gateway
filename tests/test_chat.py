@@ -17,7 +17,11 @@ from app.ratelimit import rate_limit
 
 
 def test_chat(monkeypatch):
+    async def no_log(**kwargs):
+        pass
     monkeypatch.setattr(main, "router", Router([MockProvider(latency=0)]))
+    monkeypatch.setattr(main, "record_request", no_log)
+    app.dependency_overrides[rate_limit] = lambda: 1
     app.dependency_overrides[rate_limit] = lambda: 1
     client = TestClient(app)
     r = client.post("/v1/chat", json={"model": "x", "messages": [{"role": "user", "content": "hey"}]})
