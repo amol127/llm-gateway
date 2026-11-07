@@ -2,10 +2,16 @@ from  fastapi import FastAPI , HTTPException
 from pydantic import BaseModel
 # from app.providers.anthropic import AnthropicProvider
 from app.providers.mock import MockProvider
+from app.reliability import AllProvidersFailed, Router
 import httpx
 
 app = FastAPI(title="LLM Gateway")
 provider = MockProvider()
+
+router = Router([
+    MockProvider(name="flaky", failure_rate=0.5),
+    MockProvider(name="reliable"),
+])
 
 class ChatRequest(BaseModel):
     model: str
@@ -20,20 +26,18 @@ async def health():
 @app.post("/v1/chat")
 async def chat(req: ChatRequest):
     try:
-        result = await provider.chat(req.model, req.messages)
-
+        provider_name, result = await router.chat(req.model, req.messages)
+    except AllProvidersFailed as e:
+        raise HTTPException(status_code=503, detail={"errors": e.errors})
     except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502,
-            detail={"provider_status": e.response.status_code, "provider_body": e.response.text},
-        )
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"Provider error: {e.response.status_code}")
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Provider timeout")
-    return result
+        raise HTTPException(status_code=502, detail={"provider_status": e.response.status_code})
+    return {"provider": provider_name, **result.model_dump()}
 
 
+@app.get("/debug/breakers")
+async def breakers():
+    return {n: {"failures": b.failures, "open": b.opened_at is not None}
+            for n, b in router.breakers.items()}
 
 
 
