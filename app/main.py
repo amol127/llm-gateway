@@ -1,8 +1,9 @@
-from  fastapi import FastAPI , HTTPException
+from  fastapi import FastAPI , HTTPException, Depends
 from pydantic import BaseModel
 # from app.providers.anthropic import AnthropicProvider
 from app.providers.mock import MockProvider
 from app.reliability import AllProvidersFailed, Router
+from app.auth import authenticate
 import httpx
 
 app = FastAPI(title="LLM Gateway")
@@ -24,7 +25,7 @@ async def health():
 
 
 @app.post("/v1/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest,  tenant_id: int = Depends(authenticate)):
     try:
         provider_name, result = await router.chat(req.model, req.messages)
     except AllProvidersFailed as e:
