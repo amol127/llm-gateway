@@ -9,5 +9,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     rate_limit_capacity: int = 10      # max burst
     rate_limit_refill_per_sec: float = 0.2
+    cache_ttl_seconds: int = 3600
+
+
+    
 
 settings = Settings()

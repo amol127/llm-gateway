@@ -18,7 +18,10 @@ from app.models import RequestLog
 from app.ratelimit import rate_limit
 from app.pricing import cost_usd
 from app.tracing import record_request
+from app.cache import get_cached, set_cached, cache_key
+from app.config import settings
 from app.db import Base, engine, get_session
+
 
 
 from fastapi import FastAPI, HTTPException, Depends
@@ -71,6 +74,20 @@ async def chat(
     tenant_id: int = Depends(rate_limit)
     ):
     start = time.perf_counter()
+
+    
+    key = cache_key(tenant_id, req.model, req.messages)
+    cached = await get_cached(key)
+    if cached:
+        saved = cost_usd(req.model, cached.input_tokens, cached.output_tokens)
+        background.add_task(
+            record_request,
+            tenant_id=tenant_id, provider="cache", model=req.model,
+            input_tokens=0, output_tokens=0, cost_usd=0, saved_usd=saved,
+            latency_ms=_ms(start), status="ok", cached=True,
+        )
+        return {"provider": "cache", "cached": True, **cached.model_dump()}
+    
     try:
         provider_name, result = await router.chat(req.model, req.messages)
     except AllProvidersFailed as e:
@@ -88,6 +105,9 @@ async def chat(
 
         # Written after the response is sent, so logging adds no user-facing latency.
     background.add_task(
+        set_cached, key,
+        result, 
+        settings.cache_ttl_seconds,
         record_request,
         tenant_id=tenant_id,
         provider=provider_name,
@@ -107,14 +127,16 @@ async def usage(
     session: AsyncSession = Depends(get_session),
 ):
     q = select(
-        func.count(RequestLog.id),
+        # func.count(RequestLog.id),
+        func.count(RequestLog.id).filter(RequestLog.cached.is_(True)),
+        func.coalesce(func.sum(RequestLog.saved_usd), 0),
         func.coalesce(func.sum(RequestLog.input_tokens), 0),
         func.coalesce(func.sum(RequestLog.output_tokens), 0),
         func.coalesce(func.sum(RequestLog.cost_usd), 0),
         func.coalesce(func.avg(RequestLog.latency_ms), 0),
         func.count(RequestLog.id).filter(RequestLog.status == "error"),
     ).where(RequestLog.tenant_id == tenant_id)
-    n, tin, tout, cost, avg_ms, errors = (await session.execute(q)).one()
+    n, tin, tout, cost, avg_ms, errors, hits, saved = (await session.execute(q)).one()
     return {
         "requests": n,
         "errors": errors,
@@ -122,6 +144,9 @@ async def usage(
         "output_tokens": int(tout),
         "cost_usd": round(float(cost), 6),
         "avg_latency_ms": round(float(avg_ms), 1),
+        "cache_hits": hits,
+        "cache_hit_rate": round(hits / n, 3) if n else 0,
+        "saved_usd": round(float(saved), 6),
     }
 
 

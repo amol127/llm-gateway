@@ -36,4 +36,6 @@ class RequestLog(Base):
     latency_ms: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20))  # "ok" or "error"
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    cached: Mapped[bool] = mapped_column(Boolean, default=False)
+    saved_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)

@@ -19,8 +19,13 @@ from app.ratelimit import rate_limit
 def test_chat(monkeypatch):
     async def no_log(**kwargs):
         pass
+    async def no_cache(*args, **kwargs):
+        return None
+
     monkeypatch.setattr(main, "router", Router([MockProvider(latency=0)]))
     monkeypatch.setattr(main, "record_request", no_log)
+    monkeypatch.setattr(main, "get_cached", no_cache)
+    monkeypatch.setattr(main, "set_cached", no_cache)
     app.dependency_overrides[rate_limit] = lambda: 1
     app.dependency_overrides[rate_limit] = lambda: 1
     client = TestClient(app)
