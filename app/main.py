@@ -1,6 +1,8 @@
 
 from fastapi import FastAPI , HTTPException, Depends, BackgroundTasks
 import time
+from app.guardrails import apply_guardrails
+import logging
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
@@ -35,6 +37,7 @@ from app.ratelimit import rate_limit
 from app.reliability import AllProvidersFailed, Router
 from sqlalchemy import text
 
+log = logging.getLogger("gateway")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -80,6 +83,16 @@ async def chat(
     ):
     start = time.perf_counter()
 
+    messages, pii = req.messages, {}
+    if settings.pii_mode != "off":
+        messages, pii = apply_guardrails(req.messages)
+        if pii:
+            log.warning("pii detected tenant=%s types=%s", tenant_id, pii)  # counts only, never values
+            if settings.pii_mode == "block":
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "pii_detected", "types": sorted(pii)},
+                )
     
     key = cache_key(tenant_id, req.model, req.messages)
     cached = await get_cached(key)
