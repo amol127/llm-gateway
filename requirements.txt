@@ -6,3 +6,5 @@ pydantic-settings
 sqlalchemy[asyncio]
 asyncpg
 redis
+pgvector
+fastembed

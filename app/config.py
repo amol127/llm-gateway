@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     rate_limit_capacity: int = 10      # max burst
     rate_limit_refill_per_sec: float = 0.2
     cache_ttl_seconds: int = 3600
+    semantic_threshold: float = 0.92
 
 
     

@@ -3,6 +3,9 @@ from sqlalchemy import ForeignKey, Integer, Numeric, String, DateTime, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Text
+
 def now():
     return datetime.now(timezone.utc)
 
@@ -39,3 +42,18 @@ class RequestLog(Base):
     cached: Mapped[bool] = mapped_column(Boolean, default=False)
     saved_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+
+
+class SemanticEntry(Base):
+    __tablename__ = "semantic_cache"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
+    model: Mapped[str] = mapped_column(String(100))
+    prompt: Mapped[str] = mapped_column(Text)
+    embedding = mapped_column(Vector(384))
+    response_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+    

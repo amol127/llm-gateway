@@ -11,6 +11,8 @@ from app.auth import authenticate
 # from app.providers.anthropic import AnthropicProvider
 from app.providers.mock import MockProvider
 from app.reliability import AllProvidersFailed, Router
+
+from app.semantic import semantic_lookup, semantic_store
 import app.models
 
 from app.models import RequestLog
@@ -31,12 +33,15 @@ import httpx
 from app.providers.mock import MockProvider
 from app.ratelimit import rate_limit
 from app.reliability import AllProvidersFailed, Router
+from sqlalchemy import text
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        # await conn.run_sync(Base.metadata.create_all)
     yield
 
 
@@ -87,6 +92,20 @@ async def chat(
             latency_ms=_ms(start), status="ok", cached=True,
         )
         return {"provider": "cache", "cached": True, **cached.model_dump()}
+
+
+    sem = await semantic_lookup(tenant_id, req.model, req.messages)
+    if sem:
+        sem_result, similarity = sem
+        saved = cost_usd(req.model, sem_result.input_tokens, sem_result.output_tokens)
+        background.add_task(
+            record_request,
+            tenant_id=tenant_id, provider="semantic_cache", model=req.model,
+            input_tokens=0, output_tokens=0, cost_usd=0, saved_usd=saved,
+            latency_ms=_ms(start), status="ok", cached=True,
+        )
+        return {"provider": "semantic_cache", "cached": True,
+                "similarity": round(similarity, 3), **sem_result.model_dump()}
     
     try:
         provider_name, result = await router.chat(req.model, req.messages)
@@ -153,4 +172,14 @@ async def usage(
 async def breakers():
     return {n: {"failures": b.failures, "open": b.opened_at is not None}
             for n, b in router.breakers.items()}
+
+
+
+
+
+# curl -s -X POST localhost:8000/v1/chat -H "Authorization: Bearer gw_lUDynOcB3cqFKNE79XdP2wOBeYgqdF-Wh1G1_rTcAEI" -H "content-type: application/json" -d "{\"model\":\"m\",\"messages\":[{\"role\":\"user\",\"content\":\"What is a rate limiter?\"}]}"
+# curl -s -X POST localhost:8000/v1/chat -H "Authorization: Bearer gw_lUDynOcB3cqFKNE79XdP2wOBeYgqdF-Wh1G1_rTcAEI" -H "content-type: application/json" -d "{\"model\":\"m\",\"messages\":[{\"role\":\"user\",\"content\":\"Explain what a rate limiter is\"}]}"
+# curl -s -X POST localhost:8000/v1/chat -H "Authorization: Bearer gw_lUDynOcB3cqFKNE79XdP2wOBeYgqdF-Wh1G1_rTcAEI" -H "content-type: application/json" -d "{\"model\":\"m\",\"messages\":[{\"role\":\"user\",\"content\":\"How do I bake bread?\"}]}"
+
+
 
