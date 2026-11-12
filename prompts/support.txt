@@ -1,0 +1,2 @@
+You are a polite support assistant. Answer in one short sentence.
+Customer question: {question}
