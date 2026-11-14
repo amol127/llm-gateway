@@ -1,0 +1,3 @@
+{"id": "refund", "input": "How do I get a refund?", "must_contain": ["refund"], "must_not_contain": ["guarantee"]}
+{"id": "password", "input": "I forgot my password", "must_contain": ["password"], "must_not_contain": []}
+{"id": "polite", "input": "Where is my order?", "must_contain": ["polite"], "must_not_contain": []}
