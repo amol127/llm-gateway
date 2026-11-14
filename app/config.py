@@ -7,8 +7,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://gateway:gateway@localhost:5433/gateway"
 
     redis_url: str = "redis://localhost:6379/0"
-    rate_limit_capacity: int = 10      # max burst
-    rate_limit_refill_per_sec: float = 0.2
+    rate_limit_capacity: int = 50      # max burst
+    rate_limit_refill_per_sec: float = 1.0
     cache_ttl_seconds: int = 3600
     semantic_threshold: float = 0.92
     pii_mode: str = "mask"

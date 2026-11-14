@@ -1,0 +1,20 @@
+{"question": "What is the refund window?", "reference": "Refunds are accepted within 30 days of purchase.", "candidate": "You can request a refund within 30 days.", "human": "pass"}
+{"question": "What is the refund window?", "reference": "Refunds are accepted within 30 days of purchase.", "candidate": "Refunds are accepted within 90 days.", "human": "fail"}
+{"question": "Do you ship abroad?", "reference": "We ship to India and the US only.", "candidate": "We deliver to India and the United States.", "human": "pass"}
+{"question": "Do you ship abroad?", "reference": "We ship to India and the US only.", "candidate": "Yes, we ship worldwide.", "human": "fail"}
+{"question": "When is support open?", "reference": "Support is open Monday to Friday, 9am to 6pm IST.", "candidate": "Support is open weekdays from 9 to 6 IST.", "human": "pass"}
+{"question": "When is support open?", "reference": "Support is open Monday to Friday, 9am to 6pm IST.", "candidate": "Support is available 24/7.", "human": "fail"}
+{"question": "How long is the reset link valid?", "reference": "The password reset link expires in 15 minutes.", "candidate": "The link expires after 15 minutes.", "human": "pass"}
+{"question": "How long is the reset link valid?", "reference": "The password reset link expires in 15 minutes.", "candidate": "The link expires after 50 minutes.", "human": "fail"}
+{"question": "How long is the reset link valid?", "reference": "The password reset link expires in 15 minutes.", "candidate": "The link is valid for 15 minutes, and you can request unlimited new links.", "human": "fail"}
+{"question": "How much is Premium and how many users does it include?", "reference": "Premium costs 499 rupees per month and includes 5 users.", "candidate": "Premium is 499 rupees a month for up to 5 users.", "human": "pass"}
+{"question": "How much is Premium and how many users does it include?", "reference": "Premium costs 499 rupees per month and includes 5 users.", "candidate": "Premium is 499 rupees a month for unlimited users.", "human": "fail"}
+{"question": "How much is Premium and how many users does it include?", "reference": "Premium costs 499 rupees per month and includes 5 users.", "candidate": "Premium costs 499 rupees per month.", "human": "fail"}
+{"question": "Is there a free trial?", "reference": "Yes, a 14-day trial, no card required.", "candidate": "Yes, 14 days.", "human": "pass"}
+{"question": "Is there a free trial?", "reference": "Yes, a 14-day trial, no card required.", "candidate": "Yes, 14 days, but a card is required.", "human": "fail"}
+{"question": "Can I change my email?", "reference": "You can change your email in Settings, under Account.", "candidate": "Go to Settings, then Account, to change your email.", "human": "pass"}
+{"question": "Can I change my email?", "reference": "You can change your email in Settings, under Account.", "candidate": "Email cannot be changed after signup.", "human": "fail"}
+{"question": "How do I cancel?", "reference": "Cancel anytime from Billing. Access continues until the period ends.", "candidate": "Cancel from Billing whenever you like; you keep access until the current period ends.", "human": "pass"}
+{"question": "How do I cancel?", "reference": "Cancel anytime from Billing. Access continues until the period ends.", "candidate": "Cancel anytime from Billing, and you'll get a full refund for the remaining period.", "human": "fail"}
+{"question": "Do you offer phone support?", "reference": "No, support is by email and chat only.", "candidate": "We offer support through email and chat.", "human": "pass"}
+{"question": "Do you offer phone support?", "reference": "No, support is by email and chat only.", "candidate": "Yes, call us any time.", "human": "fail"}
