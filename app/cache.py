@@ -7,9 +7,13 @@ import redis.asyncio as redis
 from app.config import settings
 from app.providers.base import ChatResult
 from app.timing import timed
+from app.redis_guard import guarded
 
 log = logging.getLogger("gateway.cache")
-r = redis.from_url(settings.redis_url, decode_responses=True)
+r = redis.from_url(settings.redis_url,
+            decode_responses=True, 
+            socket_connect_timeout=0.2,
+            socket_timeout=0.2,)
 
 
 def cache_key(tenant_id: int, model: str, messages: list[dict]) -> str:
@@ -20,7 +24,9 @@ def cache_key(tenant_id: int, model: str, messages: list[dict]) -> str:
 
 async def get_cached(key: str) -> ChatResult | None:
     try:
-        data = await r.get(key)
+        data = await guarded(lambda: r.get(key))
+        return ChatResult.model_validate_json(data) if data else None
+
     except redis.RedisError:
         log.exception("cache read failed, treating as miss")
         return None
@@ -30,7 +36,7 @@ async def get_cached(key: str) -> ChatResult | None:
 async def set_cached(key: str, result: ChatResult, ttl: int) -> None:
     try:
         with timed("cache_set"):
-            await r.set(key, result.model_dump_json(), ex=ttl)
+            await guarded(lambda: r.set(key, result.model_dump_json(), ex=ttl))
     except redis.RedisError:
         log.exception("cache write failed")
 

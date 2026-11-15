@@ -3,11 +3,14 @@ import redis.asyncio as redis
 from fastapi import Depends, HTTPException, Response
 from app.auth import authenticate
 from app.config import settings
-
+from app.redis_guard import guarded
 from app.timing import timed
 
 log = logging.getLogger("gateway.ratelimit")
-r = redis.from_url(settings.redis_url, decode_responses=True)
+r = redis.from_url(settings.redis_url,
+                   decode_responses=True,
+                   socket_connect_timeout=0.2,
+                   socket_timeout=0.2,)
 
 # Runs atomically inside Redis, so concurrent requests can't race each other.
 TOKEN_BUCKET = """
@@ -44,10 +47,12 @@ _script = r.register_script(TOKEN_BUCKET)
 async def rate_limit(response: Response, tenant_id: int = Depends(authenticate)) -> int:
     try:
         with timed("rate_limit"):
-            allowed, remaining = await _script(
-            keys=[f"rl:tenant:{tenant_id}"],
-            args=[settings.rate_limit_capacity, settings.rate_limit_refill_per_sec],
-        )
+           result = await guarded(lambda: _script(
+                        keys=[f"rl:tenant:{tenant_id}"],
+                        args=[settings.rate_limit_capacity, settings.rate_limit_refill_per_sec],))
+           if result is None:
+            return tenant_id  # Redis unavailable: fail open
+        allowed, remaining = result
     except redis.RedisError:
         # Fail open: a Redis outage should not take the whole gateway down.
         log.exception("rate limiter unavailable, allowing request")
