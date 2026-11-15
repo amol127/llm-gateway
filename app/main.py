@@ -72,6 +72,8 @@ def _ms(start:float) -> int:
 async def health():
     return {"status": "ok"}
 
+
+
 @app.post("/v1/chat")
 async def chat(
     req: ChatRequest,
@@ -176,8 +178,12 @@ async def usage(
 
 
 @app.get("/debug/timings")
-async def timings():
+async def timings(tenant_id: int = Depends(authenticate)):
+    if not settings.timing_enabled:
+        return {"enabled": False, "hint": "set TIMING_ENABLED=true and restart"}
     return summary()
+
+
 
 @app.get("/debug/breakers")
 async def breakers():

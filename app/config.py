@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     semantic_threshold: float = 0.92
     pii_mode: str = "mask"
 
+    timing_enabled: bool = False
+
 
     
 
