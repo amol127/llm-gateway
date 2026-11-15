@@ -1,51 +1,49 @@
 
-from fastapi import FastAPI , HTTPException, Depends, BackgroundTasks
 import time
-from app.guardrails import apply_guardrails
+import httpx
+import asyncio
 import logging
+from fastapi import FastAPI , HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
-from sqlalchemy import func, select
+from app.timing import summary
+
+
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.auth import authenticate
 
-# from app.providers.anthropic import AnthropicProvider
-from app.providers.mock import MockProvider
-from app.reliability import AllProvidersFailed, Router
-
-from app.semantic import semantic_lookup, semantic_store
-import app.models
 
 from app.models import RequestLog
-
-from app.ratelimit import rate_limit
-from app.pricing import cost_usd
-from app.tracing import record_request
 from app.cache import get_cached, set_cached, cache_key
 from app.config import settings
 from app.db import Base, engine, get_session
 
-
-
-from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel
-import httpx
-
+# from app.providers.anthropic import AnthropicProvider
+from app.auth import authenticate
+from app.guardrails import apply_guardrails
 from app.providers.mock import MockProvider
+from app.pricing import cost_usd
+from app.timing import timed
+from app.tracing import  log_writer,  enqueue_request
 from app.ratelimit import rate_limit
-from app.reliability import AllProvidersFailed, Router
-from sqlalchemy import text
+from app.reliability import AllProvidersFailed, Router, UnknownModel
+from app.routing import build_router
+
+
+
 
 log = logging.getLogger("gateway")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        # await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
         # await conn.run_sync(Base.metadata.create_all)
+    task = asyncio.create_task(log_writer())
     yield
+    task.cancel()
 
 
 app = FastAPI(title="LLM Gateway", lifespan=lifespan)
@@ -54,12 +52,12 @@ provider = MockProvider()
 
 
 
-router = Router([
-    MockProvider(name="flaky", failure_rate=0.5),
-    MockProvider(name="reliable"),
-])
+# router = Router([
+#     MockProvider(name="flaky", failure_rate=0.5),
+#     MockProvider(name="reliable"),
+# ])
 
-
+router = build_router()
 
 class ChatRequest(BaseModel):
     model: str
@@ -74,81 +72,78 @@ def _ms(start:float) -> int:
 async def health():
     return {"status": "ok"}
 
-
 @app.post("/v1/chat")
 async def chat(
-    req: ChatRequest, 
+    req: ChatRequest,
     background: BackgroundTasks,
-    tenant_id: int = Depends(rate_limit)
-    ):
+    tenant_id: int = Depends(rate_limit),
+):
     start = time.perf_counter()
 
     messages, pii = req.messages, {}
     if settings.pii_mode != "off":
         messages, pii = apply_guardrails(req.messages)
         if pii:
-            log.warning("pii detected tenant=%s types=%s", tenant_id, pii)  # counts only, never values
+            log.warning("pii detected tenant=%s types=%s", tenant_id, pii)  # counts only
             if settings.pii_mode == "block":
                 raise HTTPException(
                     status_code=400,
                     detail={"error": "pii_detected", "types": sorted(pii)},
                 )
-    
-    key = cache_key(tenant_id, req.model, req.messages)
-    cached = await get_cached(key)
+
+    key = cache_key(tenant_id, req.model, messages)  # masked messages, never raw
+    with timed("cache_get"):
+        cached = await get_cached(key)
+
     if cached:
-        saved = cost_usd(req.model, cached.input_tokens, cached.output_tokens)
-        background.add_task(
-            record_request,
+        enqueue_request(
             tenant_id=tenant_id, provider="cache", model=req.model,
-            input_tokens=0, output_tokens=0, cost_usd=0, saved_usd=saved,
+            input_tokens=0, output_tokens=0, cost_usd=0,
+            saved_usd=cost_usd(cached.model, cached.input_tokens, cached.output_tokens),
             latency_ms=_ms(start), status="ok", cached=True,
         )
         return {"provider": "cache", "cached": True, **cached.model_dump()}
 
+    # Semantic cache removed from the hot path (not built yet, and it was unmeasured).
 
-    sem = await semantic_lookup(tenant_id, req.model, req.messages)
-    if sem:
-        sem_result, similarity = sem
-        saved = cost_usd(req.model, sem_result.input_tokens, sem_result.output_tokens)
-        background.add_task(
-            record_request,
-            tenant_id=tenant_id, provider="semantic_cache", model=req.model,
-            input_tokens=0, output_tokens=0, cost_usd=0, saved_usd=saved,
-            latency_ms=_ms(start), status="ok", cached=True,
-        )
-        return {"provider": "semantic_cache", "cached": True,
-                "similarity": round(similarity, 3), **sem_result.model_dump()}
-    
     try:
-        provider_name, result = await router.chat(req.model, req.messages)
+        with timed("router"):
+            provider_name, result = await router.chat(req.model, messages)
+    except UnknownModel:
+        raise HTTPException(status_code=400, detail={"error": "unknown_model", "model": req.model})
     except AllProvidersFailed as e:
-        await record_request(
-            tenant_id = tenant_id, model=req.model, latency_ms = _ms(start),
-            status = "error", error="; ".join(e.errors)[:500])
+        enqueue_request(
+            tenant_id=tenant_id, model=req.model, latency_ms=_ms(start),
+            status="error", error="; ".join(e.errors)[:500],
+        )
         raise HTTPException(status_code=503, detail={"errors": e.errors})
-    
     except httpx.HTTPStatusError as e:
-        await record_request(
-            tenant_id = tenant_id, model=req.model, latency_ms = _ms(start),
-            status = "error", error=f"provider_status {e.response.status_code}",
+        enqueue_request(
+            tenant_id=tenant_id, model=req.model, latency_ms=_ms(start),
+            status="error", error=f"provider_status {e.response.status_code}",
         )
         raise HTTPException(status_code=502, detail={"provider_status": e.response.status_code})
+    except Exception:
+        log.exception("unhandled error tenant=%s model=%s", tenant_id, req.model)
+        enqueue_request(
+            tenant_id=tenant_id, model=req.model, latency_ms=_ms(start),
+            status="error", error="internal_error",
+        )
+        raise HTTPException(status_code=502, detail={"error": "upstream_failure"})
 
-    # Written after the response is sent, so logging adds no user-facing latency.
-    background.add_task(
-        record_request,
+    enqueue_request(
         tenant_id=tenant_id,
         provider=provider_name,
         model=req.model,
         input_tokens=result.input_tokens,
         output_tokens=result.output_tokens,
-        cost_usd=cost_usd(req.model, result.input_tokens, result.output_tokens),
+        cost_usd=cost_usd(result.model, result.input_tokens, result.output_tokens),
         latency_ms=_ms(start),
         status="ok",
     )
     background.add_task(set_cached, key, result, settings.cache_ttl_seconds)
     return {"provider": provider_name, **result.model_dump()}
+
 
 
 @app.get("/usage")
@@ -180,6 +175,9 @@ async def usage(
     }
 
 
+@app.get("/debug/timings")
+async def timings():
+    return summary()
 
 @app.get("/debug/breakers")
 async def breakers():

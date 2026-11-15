@@ -6,6 +6,7 @@ import redis.asyncio as redis
 
 from app.config import settings
 from app.providers.base import ChatResult
+from app.timing import timed
 
 log = logging.getLogger("gateway.cache")
 r = redis.from_url(settings.redis_url, decode_responses=True)
@@ -28,7 +29,8 @@ async def get_cached(key: str) -> ChatResult | None:
 
 async def set_cached(key: str, result: ChatResult, ttl: int) -> None:
     try:
-        await r.set(key, result.model_dump_json(), ex=ttl)
+        with timed("cache_set"):
+            await r.set(key, result.model_dump_json(), ex=ttl)
     except redis.RedisError:
         log.exception("cache write failed")
 

@@ -6,6 +6,7 @@ from app.providers.base import ChatResult, Provider
 
 
 
+
 class CircuitBreaker:
     """Opens after N consecutive failures, then allows a retry after a cooldown."""
 
@@ -41,26 +42,44 @@ def is_retryable(exc: Exception) -> bool:
     return False
 
 
+def is_quota_exhausted(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        body = exc.response.text
+        return "RESOURCE_EXHAUSTED" in body or "per day" in body
+    return False
+
 class AllProvidersFailed(Exception):
     def __init__(self, errors: list[str]):
         self.errors = errors
         super().__init__("; ".join(errors))
 
 
-
+class UnknownModel(Exception):
+    pass
 
 class Router:
 
-    def __init__(self, providers: list[Provider], max_retries: int = 2, base_delay: float = 0.2):
-        self.providers   = providers
+    def __init__(self, providers: list[Provider], max_retries: int = 2,
+                 base_delay: float = 0.2, routes: dict[str, list[tuple[str, str]]] | None = None):
+        self.providers = providers
         self.max_retries = max_retries
-        self.base_delay  = base_delay
-        self.breakers    = {p.name: CircuitBreaker() for p in providers}
+        self.base_delay = base_delay
+        self.breakers = {p.name: CircuitBreaker() for p in providers}
+        self.by_name = {p.name: p for p in providers}
+        self.routes = routes  # alias -> [(provider_name, provider_model), ...] in fallback order
+
+    def _candidates(self, model: str) -> list[tuple[Provider, str]]:
+        if self.routes is None:  # old behaviour, keeps your existing tests working
+            return [(p, model) for p in self.providers]
+        if model not in self.routes:
+            raise UnknownModel(model)
+        return [(self.by_name[name], provider_model) for name, provider_model in self.routes[model]]
 
 
     async def chat(self, model: str, messages: list[dict]) -> tuple[str, ChatResult]:
         errors: list[str] = []
-        for provider in self.providers:
+        # for provider in self.providers:
+        for provider, provider_model in self._candidates(model):
             breaker = self.breakers[provider.name]
             if not breaker.allow():
                 errors.append(f"{provider.name}: circuit open")
@@ -68,12 +87,19 @@ class Router:
 
             for attempt in range(self.max_retries + 1):
                 try:
-                    result = await provider.chat(model, messages)
+                    # result = await provider.chat(model, messages)
+                    result = await provider.chat(provider_model, messages)
                     breaker.record_success()
                     return provider.name, result
                 except Exception as e:
                     if not is_retryable(e):
                         raise  # e.g. a 400 is our bug, retrying won't help
+
+                    if is_quota_exhausted(e):
+                        breaker.record_failure()
+                        errors.append(f"{provider.name}: quota exhausted")
+                        break  # don't retry, move to the next provider
+
                     breaker.record_failure()
                     errors.append(f"{provider.name} attempt {attempt + 1}: {type(e).__name__}")
                     if attempt < self.max_retries and breaker.allow():

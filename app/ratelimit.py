@@ -4,6 +4,8 @@ from fastapi import Depends, HTTPException, Response
 from app.auth import authenticate
 from app.config import settings
 
+from app.timing import timed
+
 log = logging.getLogger("gateway.ratelimit")
 r = redis.from_url(settings.redis_url, decode_responses=True)
 
@@ -41,7 +43,8 @@ _script = r.register_script(TOKEN_BUCKET)
 
 async def rate_limit(response: Response, tenant_id: int = Depends(authenticate)) -> int:
     try:
-        allowed, remaining = await _script(
+        with timed("rate_limit"):
+            allowed, remaining = await _script(
             keys=[f"rl:tenant:{tenant_id}"],
             args=[settings.rate_limit_capacity, settings.rate_limit_refill_per_sec],
         )

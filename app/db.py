@@ -2,7 +2,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 from app.config import settings
 
-engine = create_async_engine(settings.database_url)
+engine = create_async_engine( 
+    settings.database_url,
+    pool_size=20,
+    max_overflow=10,
+    pool_timeout=5,      # fail in 5s, not 30s
+    pool_pre_ping=True,
+)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 class Base(DeclarativeBase):

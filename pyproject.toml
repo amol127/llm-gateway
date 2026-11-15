@@ -21,5 +21,6 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+    "locust>=2.47.0",
     "pytest>=9.2.0",
 ]
