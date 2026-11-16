@@ -16,15 +16,27 @@ class GeminiProvider(Provider):
         ]
         resp = await self.client.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-            headers={"x-goog-api-key": settings.gemini_api_key},
-            json={"contents": contents},
+            headers={"x-goog-api-key": settings.gemini_api_key.get_secret_value()},
+            json={"contents": contents, "generationConfig": {"temperature": 0}},
         )
         resp.raise_for_status()
+        # data = resp.json()
+        # usage = data.get("usageMetadata", {})
+        # return ChatResult(
+        #     text=data["candidates"][0]["content"]["parts"][0]["text"],
+        #     model=model,
+        #     input_tokens=usage.get("promptTokenCount", 0),
+        #     output_tokens=usage.get("candidatesTokenCount", 0),
+        # )
+
         data = resp.json()
+        candidates = data.get("candidates") or []
+        parts = (candidates[0].get("content", {}).get("parts", [])) if candidates else []
+        text = "".join(p.get("text", "") for p in parts)
         usage = data.get("usageMetadata", {})
         return ChatResult(
-            text=data["candidates"][0]["content"]["parts"][0]["text"],
+            text=text,
             model=model,
             input_tokens=usage.get("promptTokenCount", 0),
-            output_tokens=usage.get("candidatesTokenCount", 0),
+            output_tokens=usage.get("candidatesTokenCount", 0) + usage.get("thoughtsTokenCount", 0),
         )

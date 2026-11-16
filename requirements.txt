@@ -1,6 +1,6 @@
 fastapi 
 uvicorn[standard]
-httpx 
+httpx
 pydantic
 pydantic-settings
 sqlalchemy[asyncio]
@@ -8,3 +8,4 @@ asyncpg
 redis
 pgvector
 fastembed
+locust

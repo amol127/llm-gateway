@@ -1,5 +1,9 @@
 
-PRICES: dict[str, tuple[float, float]] = {}
+PRICES: dict[str, tuple[float, float]] = {
+      # USD per 1M tokens (input, output). Copy from Google's pricing page.
+    # The free tier costs 0; if you enable billing, put the paid prices here.
+    "gemini-2.5-flash": (0.0, 0.0),
+}
 DEFAULT_PRICE = (1.0, 3.0)
 
 def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
